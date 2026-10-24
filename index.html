@@ -1,0 +1,1831 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Texnikum Davomati — Telegram Mini App</title>
+
+  <!-- 1. Telegram Web App SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- 2. Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- 3. Firebase Realtime Database Compat SDK v9 -->
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+
+  <!-- 4. SheetJS (Excel Import/Export uchun) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <style>
+    * {
+      -webkit-tap-highlight-color: transparent;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    input, textarea, select {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col pb-24">
+
+  <!-- ================= YUKLANISH EKRANI (LOADING SPINNER) ================= -->
+  <div id="loadingOverlay" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex flex-col items-center justify-center text-white">
+    <div class="w-12 h-12 border-4 border-white border-t-transparent rounded-full animate-spin mb-3"></div>
+    <p id="loadingText" class="text-sm font-medium tracking-wide">Ma'lumotlar yuklanmoqda...</p>
+  </div>
+
+  <!-- ================= TOAST XABARNOMALAR ================= -->
+  <div id="toastContainer" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 w-11/12 max-w-md pointer-events-none"></div>
+
+  <!-- ================= TASDIQLASH DIALOGI (CONFIRM MODAL) ================= -->
+  <div id="confirmModal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-slate-100">
+      <h3 id="confirmTitle" class="text-base font-bold text-slate-800 mb-2">Tasdiqlang</h3>
+      <p id="confirmMessage" class="text-sm text-slate-600 mb-5 whitespace-pre-line">Ushbu amalni bajarishni xohlaysizmi?</p>
+      <div class="flex gap-3 justify-end">
+        <button id="confirmCancelBtn" class="px-4 py-2 rounded-xl text-sm font-medium bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-95 transition">
+          Bekor qilish
+        </button>
+        <button id="confirmOkBtn" class="px-4 py-2 rounded-xl text-sm font-medium bg-rose-600 text-white hover:bg-rose-700 active:scale-95 transition">
+          Tasdiqlash
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= TAHRIRLASH DIALOGI (EDIT MODAL) ================= -->
+  <div id="editModal" class="hidden fixed inset-0 bg-slate-900/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl border border-slate-100 space-y-3">
+      <h3 id="editModalTitle" class="text-base font-bold text-slate-800">Tahrirlash</h3>
+      <div id="editModalBody" class="space-y-3"></div>
+      <div class="flex gap-2 justify-end pt-2">
+        <button onclick="closeEditModal()" class="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-slate-200">
+          Bekor qilish
+        </button>
+        <button id="editModalSaveBtn" class="px-4 py-2 rounded-xl text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700">
+          Saqlash
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= TOP HEADER ================= -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-2xs">
+    <div class="max-w-2xl mx-auto px-4 py-3">
+      <div class="flex items-center justify-between gap-2">
+        <div>
+          <div class="flex items-center gap-2">
+            <span class="text-xl">🏫</span>
+            <h1 class="text-base font-bold text-slate-800 leading-tight">Texnikum Davomati</h1>
+          </div>
+          <p id="userInfoLine" class="text-xs text-slate-500 mt-0.5">
+            👤 Aniqlanmoqda...
+          </p>
+        </div>
+        <div class="flex flex-col items-end gap-1">
+          <span id="roleBadge" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600">
+            ⏳ Tekshirilmoqda
+          </span>
+          <span id="dbStatusBadge" class="text-[11px] text-slate-400 flex items-center gap-1">
+            <span id="dbStatusDot" class="w-2 h-2 rounded-full bg-slate-300 inline-block"></span>
+            <span id="dbStatusText">Oflayn</span>
+          </span>
+        </div>
+      </div>
+
+      <div id="devToolbar" class="mt-2 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+        <div class="flex items-center gap-1.5">
+          <span>📅 Bugun:</span>
+          <strong id="headerTodayDate" class="text-slate-700">----.--.--</strong>
+        </div>
+        <div class="flex items-center gap-1">
+          <button onclick="copyMyTelegramId()" class="px-2 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[11px] font-medium transition">
+            📋 ID nusxalash
+          </button>
+          <button onclick="openDevIdModal()" class="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded text-[11px] font-medium transition">
+            🛠️ Test ID
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= TABS ROW ================= -->
+    <nav id="mainTabsNav" class="max-w-2xl mx-auto px-4 flex border-t border-slate-100 bg-slate-50/60">
+      <button onclick="switchTab('attendance')" id="tabBtn_attendance" class="flex-1 py-2.5 text-xs font-bold border-b-2 border-blue-600 text-blue-600 flex items-center justify-center gap-1.5 transition">
+        <span>📋</span>
+        <span>Davomat</span>
+      </button>
+      <button onclick="switchTab('reports')" id="tabBtn_reports" class="flex-1 py-2.5 text-xs font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center justify-center gap-1.5 transition">
+        <span>📊</span>
+        <span>Hisobotlar</span>
+      </button>
+      <button onclick="switchTab('admin')" id="tabBtn_admin" class="hidden flex-1 py-2.5 text-xs font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center justify-center gap-1.5 transition">
+        <span>⚙️</span>
+        <span>Boshqaruv</span>
+      </button>
+    </nav>
+  </header>
+
+  <!-- ================= MAIN CONTENT CONTAINER ================= -->
+  <main class="flex-1 max-w-2xl w-full mx-auto px-4 py-4">
+
+    <!-- 1. RUXSAT YO'Q (GUEST VIEW) -->
+    <section id="guestView" class="hidden bg-white rounded-2xl border border-rose-200 p-6 text-center shadow-2xs my-4">
+      <div class="w-14 h-14 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center text-2xl mx-auto mb-3">
+        🔒
+      </div>
+      <h2 class="text-base font-bold text-slate-800 mb-1">Sizda ruxsat yo'q. Admin bilan bog'laning.</h2>
+      <p class="text-xs text-slate-500 mb-4">
+        Tizimdan foydalanish uchun Telegram ID raqamingiz Admin tomonidan "O'qituvchilar" ro'yxatiga qo'shilishi kerak.
+      </p>
+      <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 inline-block text-left mb-4">
+        <p class="text-xs text-slate-500">Sizning Telegram ID raqamingiz:</p>
+        <p id="guestUserIdDisplay" class="text-sm font-mono font-bold text-slate-800 mt-0.5">---</p>
+      </div>
+      <div class="flex flex-col sm:flex-row gap-2 justify-center">
+        <button onclick="copyMyTelegramId()" class="px-4 py-2.5 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 active:scale-95 transition">
+          📋 Telegram ID raqamni nusxalash
+        </button>
+      </div>
+    </section>
+
+    <!-- 2. ASOSIY ISHCHI OYNA (ADMIN VA O'QITUVCHILAR UCHUN) -->
+    <div id="authorizedContent" class="hidden space-y-4">
+
+      <!-- ================================================================= -->
+      <!-- === TAB 1: DAVOMAT (PHASE 3 — 3 PARALI ASOSIY DAVOMAT OYNASI) === -->
+      <!-- ================================================================= -->
+      <section id="tabPanel_attendance" class="space-y-3.5">
+
+        <!-- Agar umuman guruh bo'lmasa ko'rinadigan Bo'sh Holat -->
+        <div id="attendanceNoGroupsCard" class="hidden bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-2xs">
+          <div class="text-3xl mb-2">📋</div>
+          <h3 class="text-sm font-bold text-slate-800 mb-1">
+            Hozircha guruhlar yo'q. Admin guruh qo'shishi kerak.
+          </h3>
+          <p class="text-xs text-slate-500 max-w-md mx-auto mb-4">
+            Davomat belgilashni boshlash uchun avval Boshqaruv bo'limidan guruh va o'quvchilarni kiriting.
+          </p>
+          <button onclick="switchTab('admin')" class="px-4 py-2 bg-blue-600 text-white text-xs font-semibold rounded-xl hover:bg-blue-700 active:scale-95 transition">
+            ⚙️ Boshqaruv bo'limiga o'tish
+          </button>
+        </div>
+
+        <!-- Guruhlar mavjud bo'lganda ko'rinadigan Asosiy Davomat Bloki -->
+        <div id="attendanceMainWorkspace" class="space-y-3.5">
+
+          <!-- 1. Guruh tanlagich va Sana boshqaruvi -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs space-y-3">
+            <!-- Guruh Dropdown -->
+            <div>
+              <label for="attendanceGroupSelect" class="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                Guruhni tanlang
+              </label>
+              <select id="attendanceGroupSelect" onchange="handleSelectAttendanceGroup(this.value)" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-sm font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <!-- JS orqali to'ldiriladi -->
+              </select>
+            </div>
+
+            <!-- Sana tanlagich va Navigatsiya tugmalari -->
+            <div class="pt-1 border-t border-slate-100 space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-sm">📅</span>
+                  <span id="attendanceFormattedDateLabel" class="text-xs font-bold text-slate-700">--.--.----</span>
+                </div>
+                <input id="attendanceDateInput" type="date" onchange="handleAttendanceDateChange(this.value)" class="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+
+              <div class="grid grid-cols-3 gap-2">
+                <button onclick="shiftAttendanceDate(-1)" class="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-xs font-semibold transition flex items-center justify-center gap-1">
+                  <span>⬅️</span>
+                  <span>Oldingi kun</span>
+                </button>
+                <button onclick="resetAttendanceDateToday()" class="py-2 px-2 rounded-xl bg-blue-50 hover:bg-blue-100 active:scale-95 text-blue-700 text-xs font-bold transition flex items-center justify-center">
+                  Bugun
+                </button>
+                <button onclick="shiftAttendanceDate(1)" class="py-2 px-2 rounded-xl bg-slate-100 hover:bg-slate-200 active:scale-95 text-slate-700 text-xs font-semibold transition flex items-center justify-center gap-1">
+                  <span>Keyingi kun</span>
+                  <span>➡️</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2. Statistika paneli va Ommaviy amallar (Bulk Actions) -->
+          <div class="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs space-y-3">
+            <!-- Statistika: Jami / Bor / Yo'q -->
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div class="bg-slate-50 rounded-xl p-2 border border-slate-200/70">
+                <p class="text-[11px] font-medium text-slate-500">Jami o'quvchi</p>
+                <p id="attStatTotalStudents" class="text-base font-extrabold text-slate-800">0</p>
+              </div>
+              <div class="bg-emerald-50/70 rounded-xl p-2 border border-emerald-200/70">
+                <p class="text-[11px] font-medium text-emerald-700">Bor</p>
+                <p id="attStatPresentCount" class="text-base font-extrabold text-emerald-700">0</p>
+              </div>
+              <div class="bg-rose-50/70 rounded-xl p-2 border border-rose-200/70">
+                <p class="text-[11px] font-medium text-rose-700">Yo'q (Dars qoldirgan)</p>
+                <p id="attStatAbsentCount" class="text-base font-extrabold text-rose-600">0</p>
+              </div>
+            </div>
+
+            <!-- Ommaviy belgilash tugmalari -->
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="handleBulkMarkAttendance('present')" class="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 active:scale-95 text-white text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5">
+                <span>Hamma bor</span>
+                <span>✅</span>
+              </button>
+              <button onclick="handleBulkMarkAttendance('absent')" class="py-2.5 px-3 rounded-xl bg-rose-600 hover:bg-rose-700 active:scale-95 text-white text-xs font-bold shadow-2xs transition flex items-center justify-center gap-1.5">
+                <span>Hamma yo'q</span>
+                <span>❌</span>
+              </button>
+            </div>
+
+            <!-- Qisqa eslatma -->
+            <div class="flex items-center justify-between text-[11px] text-slate-500 px-1">
+              <span>Bosish: ⚪ &rarr; ❌ Yo'q &rarr; ✅ Bor</span>
+              <span>🗑 = Tozalash</span>
+            </div>
+          </div>
+
+          <!-- 3. O'quvchilar ro'yxati va 3-parali davomat tugmalari -->
+          <div class="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden">
+            <div class="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-[11px] font-bold text-slate-600">
+              <span>O'QUVCHI F.I.SH.</span>
+              <span>1-PARA / 2-PARA / 3-PARA</span>
+            </div>
+
+            <div id="attendanceStudentRowsContainer" class="divide-y divide-slate-100">
+              <!-- JS orqali har bir o'quvchi qatori chiziladi -->
+            </div>
+          </div>
+
+          <!-- 4. Pastki tasdiqlash / saqlash tugmasi -->
+          <button onclick="handleConfirmSaveTodayButton()" class="w-full py-3.5 px-4 rounded-2xl bg-blue-600 hover:bg-blue-700 active:scale-98 text-white text-sm font-bold shadow-md transition flex items-center justify-center gap-2">
+            <span>💾</span>
+            <span>Bugungi davomatni saqlash</span>
+          </button>
+
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- === TAB 2: HISOBOTLAR (4-FAZADA TO'LIQ ISHGA TUSHADI) === -->
+      <!-- ================================================================= -->
+      <section id="tabPanel_reports" class="hidden space-y-4">
+        <div class="bg-white rounded-2xl border border-slate-200 p-6 text-center shadow-2xs">
+          <div class="text-3xl mb-2">📊</div>
+          <h3 class="text-sm font-bold text-slate-800 mb-1">Hisobotlar va Statistika bo'limi</h3>
+          <p class="text-xs text-slate-500 max-w-md mx-auto">
+            Keyingi 4-fazada shu yerda sanalar oralig'i bo'yicha har bir o'quvchining qoldirgan dars soatlari (1 para = 2 soat) va "Eng ko'p dars qoldirganlar" reytingi chiqadi.
+          </p>
+        </div>
+      </section>
+
+      <!-- ================================================================= -->
+      <!-- === TAB 3: ADMIN BOSHQARUV PANELI (GURUHLAR, O'QUVCHILAR, IMPORT) === -->
+      <!-- ================================================================= -->
+      <section id="tabPanel_admin" class="hidden space-y-5">
+
+        <div class="bg-white rounded-2xl border border-slate-200 p-2 shadow-2xs flex gap-1.5">
+          <button onclick="switchAdminSubTab('groups')" id="adminSubBtn_groups" class="flex-1 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white transition">
+            👥 Guruhlar
+          </button>
+          <button onclick="switchAdminSubTab('students')" id="adminSubBtn_students" class="flex-1 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition">
+            👨‍🎓 O'quvchilar
+          </button>
+          <button onclick="switchAdminSubTab('import')" id="adminSubBtn_import" class="flex-1 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition">
+            📥 Excel / Import
+          </button>
+        </div>
+
+        <!-- 3.1. GURUHLAR BO'LIMI -->
+        <div id="adminSubPanel_groups" class="space-y-4">
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-3">
+            <h3 class="text-sm font-bold text-slate-800 flex items-center gap-1.5">
+              <span>➕</span>
+              <span>Yangi guruh qo'shish</span>
+            </h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Guruh raqami (masalan: 24-101)</label>
+                <input id="newGroupNumberInput" type="text" placeholder="24-101" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Yo'nalish / Guruh nomi</label>
+                <input id="newGroupNameInput" type="text" placeholder="Informatika" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+            </div>
+            <button onclick="handleAddGroup()" class="w-full py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 active:scale-98 transition">
+              ➕ Guruhni saqlash
+            </button>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-slate-800">📋 Mavjud guruhlar ro'yxati</h3>
+              <span id="groupsListCountBadge" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">0 ta</span>
+            </div>
+            <div id="groupsListContainer" class="divide-y divide-slate-100 text-xs"></div>
+          </div>
+        </div>
+
+        <!-- 3.2. O'QUVCHILAR BO'LIMI -->
+        <div id="adminSubPanel_students" class="hidden space-y-4">
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-3">
+            <h3 class="text-sm font-bold text-slate-800">➕ O'quvchini qo'lda qo'shish</h3>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">F.I.Sh. (Ism va familiya)</label>
+                <input id="newStudentNameInput" type="text" placeholder="Ali Valiyev" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-slate-600 mb-1">Guruhni tanlang</label>
+                <select id="newStudentGroupSelect" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <option value="">— Guruhni tanlang —</option>
+                </select>
+              </div>
+            </div>
+            <button onclick="handleAddStudentManual()" class="w-full py-2.5 bg-emerald-600 text-white text-xs font-bold rounded-xl hover:bg-emerald-700 active:scale-98 transition">
+              ➕ O'quvchini qo'shish
+            </button>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="text-sm font-bold text-slate-800">👨‍🎓 O'quvchilar ro'yxati</h3>
+              <div class="flex items-center gap-2">
+                <label class="flex items-center gap-1 text-[11px] text-slate-600 cursor-pointer">
+                  <input id="showArchivedCheckbox" type="checkbox" onchange="handleArchiveToggle(this.checked)" class="rounded border-slate-300" />
+                  <span>Arxivlanganlar</span>
+                </label>
+                <span id="studentsListCountBadge" class="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700">0 ta</span>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input id="studentSearchInput" type="text" oninput="handleStudentSearch(this.value)" placeholder="🔍 Ism yoki guruh bo'yicha qidirish..." class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <select id="adminStudentGroupFilter" onchange="handleAdminGroupFilter(this.value)" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="ALL">Barcha guruhlar</option>
+              </select>
+            </div>
+
+            <div id="studentsListContainer" class="divide-y divide-slate-100 text-xs max-h-96 overflow-y-auto"></div>
+          </div>
+        </div>
+
+        <!-- 3.3. EXCEL VA MATN ORQALI OMMMAVIY IMPORT BO'LIMI -->
+        <div id="adminSubPanel_import" class="hidden space-y-4">
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-slate-800">📋 Matn orqali tezkor yuklash</h3>
+              <button onclick="fillSampleImportText()" class="text-[11px] font-semibold text-blue-600 hover:underline">
+                ✨ Namuna to'ldirish
+              </button>
+            </div>
+            <p class="text-xs text-slate-500">
+              Har bir qatorga <strong>F.I.Sh., Guruh raqami, Guruh nomi</strong> ko'rinishida yozing:
+            </p>
+            <textarea id="importPasteTextarea" rows="6" placeholder="Ali Valiyev, 24-101, Informatika&#10;Sardor Karimov, 24-101, Informatika" class="w-full p-3 rounded-xl border border-slate-200 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+
+            <label class="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+              <input id="importUpdateExistingCheckbox" type="checkbox" class="rounded border-slate-300" />
+              <span>Dublikat topilsa mavjud o'quvchi ma'lumotini yangilash</span>
+            </label>
+
+            <button onclick="handleParsePastedText()" class="w-full py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 active:scale-98 transition">
+              📥 Matnni tekshirish va Import qilish
+            </button>
+          </div>
+
+          <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-2xs space-y-3">
+            <h3 class="text-sm font-bold text-slate-800">📊 Excel (.xlsx, .xls, .csv) fayldan yuklash</h3>
+            <p class="text-xs text-slate-500">
+              Excel ustunlari: <strong>F.I.Sh.</strong>, <strong>Guruh raqami</strong>, <strong>Guruh nomi</strong> (Maks: 10 MB).
+            </p>
+            <input id="excelFileInput" type="file" accept=".xlsx,.xls,.csv" onchange="handleExcelFileSelect(event)" class="block w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" />
+          </div>
+        </div>
+
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ================= JAVASCRIPT LOGIC (PHASE 3) ================= -->
+  <script>
+    /*************************************************************************
+     * 1. KONFIGURATSIYA VA ADMINLAR RO'YXATI
+     * Sizning Telegram ID (8081723573) va Firebase URL manzilingiz:
+     *************************************************************************/
+    const ADMIN_IDS = [
+      8081723573
+    ];
+
+    const DEFAULT_FIREBASE_CONFIG = {
+      apiKey: "AIzaSyDemoKeyForRealtimeDatabaseOnly",
+      authDomain: "tehnikum-davomat.firebaseapp.com",
+      databaseURL: "https://tehnikum-davomat-default-rtdb.firebaseio.com",
+      projectId: "tehnikum-davomat"
+    };
+
+    /*************************************************************************
+     * 2. GLOBAL STATE (ILOVA HOLATI)
+     *************************************************************************/
+    let db = null;
+    let tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+
+    let currentUser = {
+      id: null,
+      firstName: "Foydalanuvchi",
+      lastName: "",
+      username: "",
+      role: "guest"
+    };
+
+    // Firebase Realtime ma'lumotlari
+    let groupsData = {};
+    let studentsData = {};
+    let attendanceData = {};
+    let adminsData = {};
+    let teachersData = {};
+    let settingsData = {
+      semesterStart: "2026-09-01",
+      semesterEnd: "2026-12-25",
+      maxLessonHours: 2
+    };
+
+    // UI holati
+    let activeTab = "attendance"; // "attendance" | "reports" | "admin"
+    let activeAdminSubTab = "groups"; // "groups" | "students" | "import"
+
+    // 3-Faza Davomat holati (Saqlanib qoladigan tanlovlar)
+    let selectedAttendanceGroupId = localStorage.getItem("texnikum_selected_group_id") || "";
+    let selectedAttendanceDate = todayTashkent();
+
+    // Admin qidiruv va filtrlari
+    let studentSearchQuery = "";
+    let adminGroupFilter = "ALL";
+    let showArchivedStudents = false;
+
+    let isConnectedToFirebase = false;
+    let initialLoadComplete = false;
+    let renderTimeout = null;
+
+    /*************************************************************************
+     * 3. SANANI TOSHKENT VAQTI BILAN HISOBLASH (UTC+5)
+     *************************************************************************/
+    function todayTashkent() {
+      const now = new Date();
+      const utc = now.getTime() + now.getTimezoneOffset() * 60000;
+      const tashkent = new Date(utc + 5 * 3600000);
+      return tashkent.toISOString().slice(0, 10);
+    }
+
+    function formatUzDate(yyyyMmDd) {
+      if (!yyyyMmDd || typeof yyyyMmDd !== "string") return "----.--.--";
+      const parts = yyyyMmDd.split("-");
+      if (parts.length !== 3) return yyyyMmDd;
+      return `${parts[2]}.${parts[1]}.${parts[0]}`;
+    }
+
+    function addDaysToYyyyMmDd(yyyyMmDd, daysDelta) {
+      const parts = (yyyyMmDd || todayTashkent()).split("-").map(Number);
+      const dt = new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], 12, 0, 0));
+      dt.setUTCDate(dt.getUTCDate() + daysDelta);
+      return dt.toISOString().slice(0, 10);
+    }
+
+    function getDaysDifferenceFromToday(yyyyMmDd) {
+      const todayStr = todayTashkent();
+      const p1 = todayStr.split("-").map(Number);
+      const p2 = yyyyMmDd.split("-").map(Number);
+      const d1 = Date.UTC(p1[0], p1[1] - 1, p1[2]);
+      const d2 = Date.UTC(p2[0], p2[1] - 1, p2[2]);
+      return Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
+    }
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    /*************************************************************************
+     * 4. UI YORDAMCHI FUNKSIYALARI (TOAST, CONFIRM, EDIT MODAL, LOADING)
+     *************************************************************************/
+    function showToast(message, type = "success") {
+      const container = document.getElementById("toastContainer");
+      if (!container) return;
+
+      // Juda ko'p toast yig'ilib ketmasligi uchun eski toastlarni tozalaymiz
+      while (container.children.length >= 2) {
+        container.firstChild.remove();
+      }
+
+      const toast = document.createElement("div");
+      const bgClass = type === "error"
+        ? "bg-rose-600 text-white"
+        : type === "info"
+        ? "bg-slate-800 text-white"
+        : "bg-emerald-600 text-white";
+
+      toast.className = `${bgClass} px-4 py-2.5 rounded-xl shadow-lg text-xs font-semibold flex items-center justify-between gap-2 transition-all duration-200 pointer-events-auto`;
+      toast.innerHTML = `<span>${escapeHtml(message)}</span>`;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = "0";
+        setTimeout(() => toast.remove(), 200);
+      }, 2000);
+    }
+
+    function showConfirm(title, message, onConfirm) {
+      const modal = document.getElementById("confirmModal");
+      const titleEl = document.getElementById("confirmTitle");
+      const msgEl = document.getElementById("confirmMessage");
+      const cancelBtn = document.getElementById("confirmCancelBtn");
+      const okBtn = document.getElementById("confirmOkBtn");
+
+      titleEl.textContent = title;
+      msgEl.textContent = message;
+      modal.classList.remove("hidden");
+
+      const close = () => modal.classList.add("hidden");
+      cancelBtn.onclick = close;
+      okBtn.onclick = () => {
+        close();
+        if (typeof onConfirm === "function") onConfirm();
+      };
+    }
+
+    function closeEditModal() {
+      const modal = document.getElementById("editModal");
+      if (modal) modal.classList.add("hidden");
+    }
+
+    function setLoading(isLoading, text = "Ma'lumotlar yuklanmoqda...") {
+      const overlay = document.getElementById("loadingOverlay");
+      const label = document.getElementById("loadingText");
+      if (!overlay) return;
+      if (label) label.textContent = text;
+      if (isLoading) {
+        overlay.classList.remove("hidden");
+      } else {
+        overlay.classList.add("hidden");
+      }
+    }
+
+    /*************************************************************************
+     * 5. TELEGRAM WEB APP VA FOYDALANUVCHI ROLINI ANIQLASH
+     *************************************************************************/
+    function initTelegramWebApp() {
+      try {
+        if (tg) {
+          tg.ready();
+          tg.expand();
+          if (tg.BackButton) {
+            tg.BackButton.onClick(() => {
+              if (activeTab !== "attendance") {
+                switchTab("attendance");
+              }
+            });
+          }
+        }
+
+        const tgUser = tg && tg.initDataUnsafe && tg.initDataUnsafe.user
+          ? tg.initDataUnsafe.user
+          : null;
+
+        const savedTestId = localStorage.getItem("texnikum_test_user_id");
+
+        if (tgUser && tgUser.id) {
+          currentUser.id = Number(tgUser.id);
+          currentUser.firstName = tgUser.first_name || "Foydalanuvchi";
+          currentUser.lastName = tgUser.last_name || "";
+          currentUser.username = tgUser.username || "";
+        } else if (savedTestId) {
+          currentUser.id = Number(savedTestId);
+          currentUser.firstName = "Test Foydalanuvchi";
+          currentUser.lastName = "(Brauzer)";
+        } else {
+          currentUser.id = ADMIN_IDS[0];
+          currentUser.firstName = "Abdulhamid";
+          currentUser.lastName = "(Admin)";
+        }
+      } catch (err) {
+        console.error("Failed to initialize Telegram WebApp:", err);
+        showToast("❌ Xatolik: " + err.message, "error");
+      }
+    }
+
+    function computeUserRole() {
+      const uid = Number(currentUser.id);
+      const uidStr = String(currentUser.id);
+
+      const isHardcodedAdmin = ADMIN_IDS.map(Number).includes(uid);
+      const isFirebaseAdmin = Boolean(adminsData && (adminsData[uidStr] === true || adminsData[uidStr]));
+      const isFirebaseTeacher = Boolean(teachersData && teachersData[uidStr]);
+
+      if (isHardcodedAdmin || isFirebaseAdmin) {
+        currentUser.role = "admin";
+      } else if (isFirebaseTeacher) {
+        currentUser.role = "teacher";
+      } else {
+        currentUser.role = "guest";
+      }
+    }
+
+    /*************************************************************************
+     * 6. FIREBASE REALTIME DATABASE ULANISHI VA TINGLOVCHILAR
+     *************************************************************************/
+    function initFirebaseAndListeners() {
+      try {
+        if (!firebase.apps.length) {
+          firebase.initializeApp(DEFAULT_FIREBASE_CONFIG);
+        }
+        db = firebase.database();
+
+        db.ref(".info/connected").on("value", (snap) => {
+          isConnectedToFirebase = snap.val() === true;
+          scheduleRender();
+        });
+
+        db.ref("groups").on("value", (s) => {
+          groupsData = s.val() || {};
+          markLoadedAndRender();
+        }, handleFirebaseError);
+
+        db.ref("students").on("value", (s) => {
+          studentsData = s.val() || {};
+          markLoadedAndRender();
+        }, handleFirebaseError);
+
+        db.ref("attendance").on("value", (s) => {
+          attendanceData = s.val() || {};
+          markLoadedAndRender();
+        }, handleFirebaseError);
+
+        db.ref("admins").on("value", (s) => {
+          adminsData = s.val() || {};
+          markLoadedAndRender();
+        }, handleFirebaseError);
+
+        db.ref("teachers").on("value", (s) => {
+          teachersData = s.val() || {};
+          markLoadedAndRender();
+        }, handleFirebaseError);
+
+        db.ref("settings/global").on("value", (s) => {
+          if (s.val()) {
+            settingsData = { ...settingsData, ...s.val() };
+          }
+          markLoadedAndRender();
+        }, handleFirebaseError);
+
+        setTimeout(() => {
+          if (!initialLoadComplete) {
+            initialLoadComplete = true;
+            setLoading(false);
+            scheduleRender();
+          }
+        }, 2500);
+
+      } catch (err) {
+        console.error("Firebase initialization error:", err);
+        setLoading(false);
+        showToast("❌ Xatolik: " + err.message, "error");
+      }
+    }
+
+    function handleFirebaseError(err) {
+      console.error("Firebase listener error:", err);
+      setLoading(false);
+      showToast("❌ Firebase xatoligi: " + err.message, "error");
+    }
+
+    function markLoadedAndRender() {
+      if (!initialLoadComplete) {
+        initialLoadComplete = true;
+        setLoading(false);
+      }
+      scheduleRender();
+    }
+
+    /*************************************************************************
+     * 7. DAVOMAT BELGILASH LOGIKASI (CORE PHASE 3 — 3 PARA TOGGLE VA BULK)
+     *************************************************************************/
+    function ensureValidSelectedAttendanceGroup(sortedGroups) {
+      if (!sortedGroups || sortedGroups.length === 0) {
+        selectedAttendanceGroupId = "";
+        return;
+      }
+      const exists = sortedGroups.some((g) => g.id === selectedAttendanceGroupId);
+      if (!exists) {
+        selectedAttendanceGroupId = sortedGroups[0].id;
+        localStorage.setItem("texnikum_selected_group_id", selectedAttendanceGroupId);
+      }
+    }
+
+    function getActiveStudentsInGroup(groupId) {
+      if (!groupId) return [];
+      return Object.entries(studentsData || {})
+        .map(([id, s]) => ({ id, ...s }))
+        .filter((s) => s && !s.archived && s.active !== false && s.groupId === groupId)
+        .sort((a, b) => String(a.fullName || "").localeCompare(String(b.fullName || "")));
+    }
+
+    function handleSelectAttendanceGroup(groupId) {
+      selectedAttendanceGroupId = groupId;
+      localStorage.setItem("texnikum_selected_group_id", groupId);
+      renderAttendanceSectionOnly();
+    }
+
+    function handleAttendanceDateChange(newDateStr) {
+      if (!newDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(newDateStr)) return;
+      const diffDays = getDaysDifferenceFromToday(newDateStr);
+      if (diffDays > 30) {
+        showToast("⚠️ Diqqat: Siz 30 kundan keyingi kelajak sanani tanladingiz!", "info");
+      }
+      selectedAttendanceDate = newDateStr;
+      renderAttendanceSectionOnly();
+    }
+
+    function shiftAttendanceDate(daysDelta) {
+      const nextDate = addDaysToYyyyMmDd(selectedAttendanceDate, daysDelta);
+      handleAttendanceDateChange(nextDate);
+    }
+
+    function resetAttendanceDateToday() {
+      selectedAttendanceDate = todayTashkent();
+      renderAttendanceSectionOnly();
+      showToast("📅 Bugungi sanaga qaytildi", "info");
+    }
+
+    /**
+     * Har bir para tugmasi bosilganda:
+     * null -> "absent" -> "present" -> "absent" -> "present"...
+     */
+    function handleToggleStudentLesson(studentId, lessonNumber) {
+      if (currentUser.role !== "admin" && currentUser.role !== "teacher") {
+        showToast("❌ Sizda davomat belgilash huquqi yo'q", "error");
+        return;
+      }
+
+      const dateKey = selectedAttendanceDate;
+      const lessonKey = `lesson${lessonNumber}`;
+
+      if (!attendanceData[dateKey]) {
+        attendanceData[dateKey] = {};
+      }
+      const prevRecord = attendanceData[dateKey][studentId]
+        ? { ...attendanceData[dateKey][studentId] }
+        : { lesson1: null, lesson2: null, lesson3: null };
+
+      const currentStatus = prevRecord[lessonKey] || null;
+
+      // Sikl: null -> "absent" (birinchi bosish = yo'q), "absent" -> "present", "present" -> "absent"
+      let nextStatus = "absent";
+      if (currentStatus === null) {
+        nextStatus = "absent";
+      } else if (currentStatus === "absent") {
+        nextStatus = "present";
+      } else {
+        nextStatus = "absent";
+      }
+
+      const updatedRecord = {
+        lesson1: prevRecord.lesson1 || null,
+        lesson2: prevRecord.lesson2 || null,
+        lesson3: prevRecord.lesson3 || null,
+        [lessonKey]: nextStatus,
+        markedBy: currentUser.id,
+        updatedAt: Date.now()
+      };
+
+      // 1. Optimistic UI update (darhol ekranda o'zgaradi, skroll va guruh saqlanadi)
+      attendanceData[dateKey][studentId] = updatedRecord;
+      renderAttendanceSectionOnly();
+
+      // 2. Server write
+      const recordRef = db.ref(`attendance/${dateKey}/${studentId}`);
+      recordRef.update({
+        [lessonKey]: nextStatus,
+        markedBy: currentUser.id,
+        updatedAt: updatedRecord.updatedAt
+      }).catch((err) => {
+        console.error("Failed to write attendance:", err);
+        // Xatolik bo'lsa oldingi holatga qaytarish (Revert)
+        attendanceData[dateKey][studentId] = prevRecord;
+        renderAttendanceSectionOnly();
+        showToast("❌ Xatolik: " + err.message, "error");
+      });
+    }
+
+    /**
+     * [🗑] tugmasi bosilganda o'quvchining shu kungi 3 ta para holatini null (⚪) qiladi
+     */
+    function handleResetStudentRow(studentId) {
+      if (currentUser.role !== "admin" && currentUser.role !== "teacher") return;
+
+      const dateKey = selectedAttendanceDate;
+      if (!attendanceData[dateKey]) attendanceData[dateKey] = {};
+
+      const prevRecord = attendanceData[dateKey][studentId]
+        ? { ...attendanceData[dateKey][studentId] }
+        : null;
+
+      // Optimistic clear
+      delete attendanceData[dateKey][studentId];
+      renderAttendanceSectionOnly();
+
+      db.ref(`attendance/${dateKey}/${studentId}`).remove()
+        .then(() => {
+          showToast("⚪ Belgilar tozalandi");
+        })
+        .catch((err) => {
+          console.error("Failed to reset student attendance:", err);
+          if (prevRecord) attendanceData[dateKey][studentId] = prevRecord;
+          renderAttendanceSectionOnly();
+          showToast("❌ Xatolik: " + err.message, "error");
+        });
+    }
+
+    /**
+     * Ommaviy belgilash: "Hamma bor ✅" yoki "Hamma yo'q ❌"
+     */
+    function handleBulkMarkAttendance(targetStatus) {
+      if (currentUser.role !== "admin" && currentUser.role !== "teacher") return;
+
+      const groupStudents = getActiveStudentsInGroup(selectedAttendanceGroupId);
+      if (groupStudents.length === 0) {
+        showToast("❌ Bu guruhda o'quvchilar yo'q", "error");
+        return;
+      }
+
+      const executeBulk = () => {
+        const dateKey = selectedAttendanceDate;
+        if (!attendanceData[dateKey]) attendanceData[dateKey] = {};
+
+        const prevDateSnapshot = JSON.parse(JSON.stringify(attendanceData[dateKey]));
+        const nowTs = Date.now();
+        const multiUpdates = {};
+
+        groupStudents.forEach((st) => {
+          const rec = {
+            lesson1: targetStatus,
+            lesson2: targetStatus,
+            lesson3: targetStatus,
+            markedBy: currentUser.id,
+            updatedAt: nowTs
+          };
+          attendanceData[dateKey][st.id] = rec;
+          multiUpdates[`attendance/${dateKey}/${st.id}`] = rec;
+        });
+
+        // Optimistic render
+        renderAttendanceSectionOnly();
+
+        db.ref().update(multiUpdates)
+          .then(() => {
+            showToast(targetStatus === "present" ? "✅ Hamma 'Bor' deb belgilandi" : "❌ Hamma 'Yo'q' deb belgilandi");
+          })
+          .catch((err) => {
+            console.error("Bulk attendance write error:", err);
+            attendanceData[dateKey] = prevDateSnapshot;
+            renderAttendanceSectionOnly();
+            showToast("❌ Xatolik: " + err.message, "error");
+          });
+      };
+
+      if (targetStatus === "absent") {
+        showConfirm(
+          "Hamma yo'q deb belgilansinmi?",
+          `Guruhdagi barcha ${groupStudents.length} nafar o'quvchi uchun 1, 2 va 3-paralar "Yo'q ❌" deb belgilansinmi?`,
+          executeBulk
+        );
+      } else {
+        executeBulk();
+      }
+    }
+
+    function handleConfirmSaveTodayButton() {
+      showToast("✅ Saqlandi! Barcha o'zgarishlar bazada.", "success");
+    }
+
+    /*************************************************************************
+     * 8. GURUHLAR VA O'QUVCHILAR BILAN ISHLASH (PHASE 2 CRUD + IMPORT)
+     *************************************************************************/
+    function getSortedGroupsList() {
+      return Object.entries(groupsData || {})
+        .map(([id, g]) => ({ id, ...g }))
+        .filter((g) => g && g.active !== false)
+        .sort((a, b) => String(a.number || "").localeCompare(String(b.number || "")));
+    }
+
+    function findGroupByNumber(groupNumber) {
+      const normalized = String(groupNumber || "").trim().toLowerCase();
+      for (const [id, g] of Object.entries(groupsData || {})) {
+        if (g && g.active !== false && String(g.number || "").trim().toLowerCase() === normalized) {
+          return { id, ...g };
+        }
+      }
+      return null;
+    }
+
+    function handleAddGroup() {
+      if (currentUser.role !== "admin") return;
+
+      const numInput = document.getElementById("newGroupNumberInput");
+      const nameInput = document.getElementById("newGroupNameInput");
+      const number = (numInput.value || "").trim();
+      const name = (nameInput.value || "").trim();
+
+      if (!number || !name) {
+        showToast("❌ Guruh raqami va nomini kiriting", "error");
+        return;
+      }
+
+      if (findGroupByNumber(number)) {
+        showToast(`❌ ${number} raqamli guruh allaqachon mavjud!`, "error");
+        return;
+      }
+
+      const newRef = db.ref("groups").push();
+      newRef.set({
+        number,
+        name,
+        active: true,
+        createdAt: Date.now()
+      })
+        .then(() => {
+          numInput.value = "";
+          nameInput.value = "";
+          selectedAttendanceGroupId = newRef.key;
+          localStorage.setItem("texnikum_selected_group_id", newRef.key);
+          showToast(`✅ Guruh qo'shildi: ${number} — ${name}`);
+        })
+        .catch((err) => showToast("❌ Xatolik: " + err.message, "error"));
+    }
+
+    function openEditGroupModal(groupId) {
+      const g = groupsData[groupId];
+      if (!g) return;
+
+      const modal = document.getElementById("editModal");
+      const titleEl = document.getElementById("editModalTitle");
+      const bodyEl = document.getElementById("editModalBody");
+      const saveBtn = document.getElementById("editModalSaveBtn");
+
+      titleEl.textContent = "Guruhni tahrirlash";
+      bodyEl.innerHTML = `
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Guruh raqami</label>
+          <input id="editGroupNum" type="text" value="${escapeHtml(g.number)}" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Guruh nomi</label>
+          <input id="editGroupName" type="text" value="${escapeHtml(g.name)}" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs" />
+        </div>
+      `;
+
+      modal.classList.remove("hidden");
+
+      saveBtn.onclick = () => {
+        const newNum = document.getElementById("editGroupNum").value.trim();
+        const newName = document.getElementById("editGroupName").value.trim();
+        if (!newNum || !newName) {
+          showToast("❌ Barcha maydonlarni to'ldiring", "error");
+          return;
+        }
+
+        const updates = {};
+        updates[`groups/${groupId}/number`] = newNum;
+        updates[`groups/${groupId}/name`] = newName;
+
+        Object.entries(studentsData || {}).forEach(([sid, st]) => {
+          if (st && st.groupId === groupId) {
+            updates[`students/${sid}/groupNumber`] = newNum;
+            updates[`students/${sid}/groupName`] = newName;
+          }
+        });
+
+        db.ref().update(updates)
+          .then(() => {
+            closeEditModal();
+            showToast("✅ Guruh yangilandi");
+          })
+          .catch((err) => showToast("❌ Xatolik: " + err.message, "error"));
+      };
+    }
+
+    function handleDeleteGroup(groupId) {
+      const g = groupsData[groupId];
+      if (!g) return;
+
+      const studentsInGroup = Object.values(studentsData || {}).filter((s) => s && s.groupId === groupId && !s.archived).length;
+
+      showConfirm(
+        "Guruhni o'chirish",
+        `"${g.number} — ${g.name}" guruhi o'chirilsinmi?\n(Ichida ${studentsInGroup} ta o'quvchi bor)`,
+        () => {
+          db.ref(`groups/${groupId}`).remove()
+            .then(() => showToast("✅ Guruh o'chirildi"))
+            .catch((err) => showToast("❌ Xatolik: " + err.message, "error"));
+        }
+      );
+    }
+
+    function isValidStudentName(name) {
+      if (!name || typeof name !== "string") return false;
+      const trimmed = name.trim();
+      return trimmed.length >= 2 && /[a-zA-ZА-Яа-яЁёЎўҚқҒғҲҳ]/.test(trimmed);
+    }
+
+    function handleAddStudentManual() {
+      if (currentUser.role !== "admin") return;
+
+      const nameInput = document.getElementById("newStudentNameInput");
+      const groupSelect = document.getElementById("newStudentGroupSelect");
+
+      const fullName = (nameInput.value || "").trim();
+      const groupId = groupSelect.value;
+
+      if (!isValidStudentName(fullName)) {
+        showToast("❌ O'quvchi F.I.Sh. kamida 2 ta harfdan iborat bo'lishi kerak", "error");
+        return;
+      }
+      if (!groupId || !groupsData[groupId]) {
+        showToast("❌ Avval guruhni tanlang!", "error");
+        return;
+      }
+
+      const grp = groupsData[groupId];
+      const duplicate = Object.values(studentsData || {}).find(
+        (s) => s && !s.archived &&
+          String(s.fullName || "").trim().toLowerCase() === fullName.toLowerCase() &&
+          String(s.groupNumber || "").trim().toLowerCase() === String(grp.number || "").trim().toLowerCase()
+      );
+
+      if (duplicate) {
+        showToast("❌ Bu o'quvchi ushbu guruhda allaqachon mavjud!", "error");
+        return;
+      }
+
+      db.ref("students").push({
+        fullName,
+        groupId,
+        groupNumber: grp.number,
+        groupName: grp.name,
+        telegramId: null,
+        active: true,
+        archived: false,
+        createdAt: Date.now()
+      })
+        .then(() => {
+          nameInput.value = "";
+          showToast(`✅ O'quvchi qo'shildi: ${fullName}`);
+        })
+        .catch((err) => showToast("❌ Xatolik: " + err.message, "error"));
+    }
+
+    function openEditStudentModal(studentId) {
+      const st = studentsData[studentId];
+      if (!st) return;
+
+      const groups = getSortedGroupsList();
+      const groupOptions = groups.map((g) =>
+        `<option value="${escapeHtml(g.id)}" ${g.id === st.groupId ? "selected" : ""}>${escapeHtml(g.number)} — ${escapeHtml(g.name)}</option>`
+      ).join("");
+
+      const modal = document.getElementById("editModal");
+      const titleEl = document.getElementById("editModalTitle");
+      const bodyEl = document.getElementById("editModalBody");
+      const saveBtn = document.getElementById("editModalSaveBtn");
+
+      titleEl.textContent = "O'quvchini tahrirlash";
+      bodyEl.innerHTML = `
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">F.I.Sh.</label>
+          <input id="editStudentName" type="text" value="${escapeHtml(st.fullName)}" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs" />
+        </div>
+        <div>
+          <label class="block text-[11px] font-semibold text-slate-600 mb-1">Guruh</label>
+          <select id="editStudentGroup" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white">
+            ${groupOptions}
+          </select>
+        </div>
+      `;
+
+      modal.classList.remove("hidden");
+
+      saveBtn.onclick = () => {
+        const newName = document.getElementById("editStudentName").value.trim();
+        const newGroupId = document.getElementById("editStudentGroup").value;
+        const grp = groupsData[newGroupId];
+
+        if (!isValidStudentName(newName) || !grp) {
+          showToast("❌ Ma'lumotlarni to'g'ri kiriting", "error");
+          return;
+        }
+
+        db.ref(`students/${studentId}`).update({
+          fullName: newName,
+          groupId: newGroupId,
+          groupNumber: grp.number,
+          groupName: grp.name
+        })
+          .then(() => {
+            closeEditModal();
+            showToast("✅ O'quvchi ma'lumoti yangilandi");
+          })
+          .catch((err) => showToast("❌ Xatolik: " + err.message, "error"));
+      };
+    }
+
+    function toggleArchiveStudent(studentId) {
+      const st = studentsData[studentId];
+      if (!st) return;
+      const newArchived = !st.archived;
+      db.ref(`students/${studentId}`).update({
+        archived: newArchived,
+        active: !newArchived
+      })
+        .then(() => showToast(newArchived ? "📦 O'quvchi arxivlandi" : "♻️ O'quvchi tiklandi"))
+        .catch((err) => showToast("❌ Xatolik: " + err.message, "error"));
+    }
+
+    function handleDeleteStudent(studentId) {
+      const st = studentsData[studentId];
+      if (!st) return;
+
+      showConfirm(
+        "O'quvchi o'chirilsinmi?",
+        `"${st.fullName}" (${st.groupNumber}) ro'yxatdan butunlay o'chirilsinmi?`,
+        () => {
+          db.ref(`students/${studentId}`).remove()
+            .then(() => showToast("✅ O'quvchi o'chirildi"))
+            .catch((err) => showToast("❌ Xatolik: " + err.message, "error"));
+        }
+      );
+    }
+
+    function handleStudentSearch(val) {
+      studentSearchQuery = (val || "").trim().toLowerCase();
+      renderStudentsListOnly();
+    }
+
+    function handleAdminGroupFilter(val) {
+      adminGroupFilter = val || "ALL";
+      renderStudentsListOnly();
+    }
+
+    function handleArchiveToggle(checked) {
+      showArchivedStudents = Boolean(checked);
+      renderStudentsListOnly();
+    }
+
+    function fillSampleImportText() {
+      const ta = document.getElementById("importPasteTextarea");
+      if (!ta) return;
+      ta.value = [
+        "Ali Valiyev, 24-101, Informatika",
+        "Sardor Karimov, 24-101, Informatika",
+        "Jasur Toshmatov, 24-101, Informatika",
+        "Dilnoza Rahimova, 24-101, Informatika",
+        "Malika Umarova, 24-101, Informatika",
+        "Bobur Xolmatov, 24-102, Buxgalteriya",
+        "Aziza Qodirova, 24-102, Buxgalteriya",
+        "Bekzod Nurmatov, 24-102, Buxgalteriya",
+        "Shoxrux Ergashev, 24-102, Buxgalteriya",
+        "Madina Yusupova, 24-102, Buxgalteriya"
+      ].join("\n");
+      showToast("✨ 10 ta namunaviy o'quvchi va 2 ta guruh tayyorlandi!", "info");
+    }
+
+    function handleParsePastedText() {
+      const ta = document.getElementById("importPasteTextarea");
+      if (!ta || !ta.value.trim()) {
+        showToast("❌ Avval matn maydoniga o'quvchilar ro'yxatini kiriting!", "error");
+        return;
+      }
+
+      const lines = ta.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+      const parsedRows = [];
+
+      for (const line of lines) {
+        const parts = line.includes("\t")
+          ? line.split("\t").map((p) => p.trim())
+          : line.split(/[,;]/).map((p) => p.trim());
+
+        if (parts.length >= 2) {
+          const fullName = parts[0];
+          const groupNumber = parts[1];
+          const groupName = parts[2] || "Umumiy yo'nalish";
+          const telegramIdRaw = parts[3] || null;
+
+          if (fullName.toLowerCase().includes("f.i.sh") || fullName.toLowerCase() === "name") {
+            continue;
+          }
+
+          parsedRows.push({
+            fullName,
+            groupNumber,
+            groupName,
+            telegramId: telegramIdRaw && !isNaN(Number(telegramIdRaw)) ? Number(telegramIdRaw) : null
+          });
+        }
+      }
+
+      processImportedRows(parsedRows);
+    }
+
+    function handleExcelFileSelect(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+
+      if (file.size > 10 * 1024 * 1024) {
+        showToast("❌ Fayl hajmi 10 MB dan oshmasligi kerak!", "error");
+        event.target.value = "";
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = new Uint8Array(e.target.result);
+          const workbook = XLSX.read(data, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawJson = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+          if (!rawJson.length) {
+            showToast("❌ Excel fayl ichida ma'lumot topilmadi", "error");
+            return;
+          }
+
+          const parsedRows = rawJson.map((row) => {
+            const keys = Object.keys(row);
+            const findCol = (candidates) => {
+              for (const k of keys) {
+                const cleanK = k.trim().toLowerCase();
+                if (candidates.some((c) => cleanK === c.toLowerCase() || cleanK.includes(c.toLowerCase()))) {
+                  return String(row[k]).trim();
+                }
+              }
+              return "";
+            };
+
+            const fullName = findCol(["f.i.sh", "f.i.o", "ism familiya", "o'quvchi", "full name", "name", "ism"]);
+            const groupNumber = findCol(["guruh raqami", "guruh raqam", "guruh №", "group number", "guruh", "group"]);
+            const groupName = findCol(["guruh nomi", "group name", "yo'nalish", "fan"]) || "Umumiy yo'nalish";
+            const tgIdStr = findCol(["telegram id", "telegram_id", "telegramid", "id"]);
+
+            return {
+              fullName,
+              groupNumber,
+              groupName,
+              telegramId: tgIdStr && !isNaN(Number(tgIdStr)) ? Number(tgIdStr) : null
+            };
+          }).filter((r) => r.fullName && r.groupNumber);
+
+          processImportedRows(parsedRows);
+        } catch (err) {
+          console.error("Excel parse error:", err);
+          showToast("❌ Excel faylni o'qishda xatolik: " + err.message, "error");
+        } finally {
+          event.target.value = "";
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function processImportedRows(rows) {
+      const validRows = rows.filter((r) => isValidStudentName(r.fullName) && String(r.groupNumber || "").trim().length > 0);
+
+      if (validRows.length === 0) {
+        showToast("❌ To'g'ri formatdagi o'quvchilar topilmadi!", "error");
+        return;
+      }
+
+      const uniqueGroupNums = new Set(validRows.map((r) => String(r.groupNumber).trim()));
+
+      showConfirm(
+        "Importni tasdiqlash",
+        `${uniqueGroupNums.size} ta guruh, ${validRows.length} ta o'quvchi topildi.\nImport qilinsinmi?`,
+        () => executeBatchImport(validRows)
+      );
+    }
+
+    async function executeBatchImport(validRows) {
+      setLoading(true, "Import qilinmoqda...");
+      const updateExisting = document.getElementById("importUpdateExistingCheckbox")?.checked || false;
+
+      try {
+        const updates = {};
+        let createdGroupsCount = 0;
+        let addedStudentsCount = 0;
+        let skippedDuplicatesCount = 0;
+
+        const groupMapByNumber = {};
+        Object.entries(groupsData || {}).forEach(([gid, g]) => {
+          if (g && g.active !== false && g.number) {
+            groupMapByNumber[String(g.number).trim().toLowerCase()] = {
+              id: gid,
+              number: g.number,
+              name: g.name
+            };
+          }
+        });
+
+        for (const row of validRows) {
+          const gNumNorm = String(row.groupNumber).trim().toLowerCase();
+          if (!groupMapByNumber[gNumNorm]) {
+            const newGroupId = db.ref("groups").push().key;
+            const gObj = {
+              number: String(row.groupNumber).trim(),
+              name: String(row.groupName || "Umumiy").trim(),
+              active: true,
+              createdAt: Date.now()
+            };
+            updates[`groups/${newGroupId}`] = gObj;
+            groupMapByNumber[gNumNorm] = { id: newGroupId, ...gObj };
+            createdGroupsCount++;
+          }
+        }
+
+        const existingStudentMap = {};
+        Object.entries(studentsData || {}).forEach(([sid, s]) => {
+          if (s && !s.archived) {
+            const key = `${String(s.fullName || "").trim().toLowerCase()}__${String(s.groupNumber || "").trim().toLowerCase()}`;
+            existingStudentMap[key] = sid;
+          }
+        });
+
+        for (const row of validRows) {
+          const gNumNorm = String(row.groupNumber).trim().toLowerCase();
+          const grp = groupMapByNumber[gNumNorm];
+          const key = `${String(row.fullName).trim().toLowerCase()}__${gNumNorm}`;
+
+          if (existingStudentMap[key]) {
+            if (updateExisting) {
+              const sid = existingStudentMap[key];
+              updates[`students/${sid}/fullName`] = String(row.fullName).trim();
+              updates[`students/${sid}/groupId`] = grp.id;
+              updates[`students/${sid}/groupNumber`] = grp.number;
+              updates[`students/${sid}/groupName`] = grp.name;
+              if (row.telegramId) updates[`students/${sid}/telegramId`] = row.telegramId;
+            } else {
+              skippedDuplicatesCount++;
+            }
+          } else {
+            const newSid = db.ref("students").push().key;
+            updates[`students/${newSid}`] = {
+              fullName: String(row.fullName).trim(),
+              groupId: grp.id,
+              groupNumber: grp.number,
+              groupName: grp.name,
+              telegramId: row.telegramId || null,
+              active: true,
+              archived: false,
+              createdAt: Date.now()
+            };
+            existingStudentMap[key] = newSid;
+            addedStudentsCount++;
+          }
+        }
+
+        const entries = Object.entries(updates);
+        const chunkSize = 450;
+        for (let i = 0; i < entries.length; i += chunkSize) {
+          const chunk = Object.fromEntries(entries.slice(i, i + chunkSize));
+          await db.ref().update(chunk);
+        }
+
+        setLoading(false);
+        const pasteArea = document.getElementById("importPasteTextarea");
+        if (pasteArea) pasteArea.value = "";
+
+        showToast(
+          `✅ ${addedStudentsCount} ta o'quvchi qo'shildi. ${createdGroupsCount} ta guruh yaratildi. ${skippedDuplicatesCount} ta dublikat o'tkazib yuborildi.`
+        );
+        switchTab("attendance");
+
+      } catch (err) {
+        console.error("Batch import failed:", err);
+        setLoading(false);
+        showToast("❌ Import xatoligi: " + err.message, "error");
+      }
+    }
+
+    /*************************************************************************
+     * 9. DEBOUNCED RENDER VA DOM YANGILASH (SCROLL VA FOCUS SAQLANADI)
+     *************************************************************************/
+    function scheduleRender() {
+      if (renderTimeout) clearTimeout(renderTimeout);
+      renderTimeout = setTimeout(() => {
+        render();
+      }, 100);
+    }
+
+    function render() {
+      computeUserRole();
+
+      // Header
+      const fullName = `${currentUser.firstName} ${currentUser.lastName}`.trim();
+      const userInfoLine = document.getElementById("userInfoLine");
+      if (userInfoLine) userInfoLine.textContent = `👤 ${fullName} (ID: ${currentUser.id})`;
+
+      const headerTodayDate = document.getElementById("headerTodayDate");
+      if (headerTodayDate) headerTodayDate.textContent = formatUzDate(todayTashkent());
+
+      // Role Badge
+      const roleBadge = document.getElementById("roleBadge");
+      if (roleBadge) {
+        if (currentUser.role === "admin") {
+          roleBadge.className = "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-100 text-indigo-800";
+          roleBadge.textContent = "Admin 🛡️";
+        } else if (currentUser.role === "teacher") {
+          roleBadge.className = "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800";
+          roleBadge.textContent = "O'qituvchi 📝";
+        } else {
+          roleBadge.className = "inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-100 text-rose-800";
+          roleBadge.textContent = "Mehmon 🔒";
+        }
+      }
+
+      // Firebase Status
+      const dbDot = document.getElementById("dbStatusDot");
+      const dbText = document.getElementById("dbStatusText");
+      if (dbDot && dbText) {
+        if (isConnectedToFirebase) {
+          dbDot.className = "w-2 h-2 rounded-full bg-emerald-500 inline-block";
+          dbText.textContent = "Firebase Onlayn";
+        } else {
+          dbDot.className = "w-2 h-2 rounded-full bg-amber-500 inline-block";
+          dbText.textContent = "Ulanmoqda...";
+        }
+      }
+
+      // Guest vs Authorized
+      const guestView = document.getElementById("guestView");
+      const authorizedContent = document.getElementById("authorizedContent");
+      const mainTabsNav = document.getElementById("mainTabsNav");
+      const guestUserIdDisplay = document.getElementById("guestUserIdDisplay");
+
+      if (guestUserIdDisplay) guestUserIdDisplay.textContent = String(currentUser.id);
+
+      if (currentUser.role === "guest") {
+        guestView.classList.remove("hidden");
+        authorizedContent.classList.add("hidden");
+        mainTabsNav.classList.add("hidden");
+        return;
+      } else {
+        guestView.classList.add("hidden");
+        authorizedContent.classList.remove("hidden");
+        mainTabsNav.classList.remove("hidden");
+      }
+
+      // Admin Tab
+      const adminTabBtn = document.getElementById("tabBtn_admin");
+      if (adminTabBtn) {
+        if (currentUser.role === "admin") {
+          adminTabBtn.classList.remove("hidden");
+        } else {
+          adminTabBtn.classList.add("hidden");
+          if (activeTab === "admin") activeTab = "attendance";
+        }
+      }
+
+      // Main Tabs
+      ["attendance", "reports", "admin"].forEach((tab) => {
+        const btn = document.getElementById(`tabBtn_${tab}`);
+        const panel = document.getElementById(`tabPanel_${tab}`);
+        if (!btn || !panel) return;
+
+        if (tab === activeTab) {
+          btn.className = "flex-1 py-2.5 text-xs font-bold border-b-2 border-blue-600 text-blue-600 flex items-center justify-center gap-1.5 transition";
+          panel.classList.remove("hidden");
+        } else {
+          btn.className = `${tab === "admin" && currentUser.role !== "admin" ? "hidden " : ""}flex-1 py-2.5 text-xs font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-700 flex items-center justify-center gap-1.5 transition`;
+          panel.classList.add("hidden");
+        }
+      });
+
+      // Sub-tabs in Admin
+      ["groups", "students", "import"].forEach((sub) => {
+        const btn = document.getElementById(`adminSubBtn_${sub}`);
+        const panel = document.getElementById(`adminSubPanel_${sub}`);
+        if (!btn || !panel) return;
+        if (sub === activeAdminSubTab) {
+          btn.className = "flex-1 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white transition";
+          panel.classList.remove("hidden");
+        } else {
+          btn.className = "flex-1 py-2 rounded-xl text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200 transition";
+          panel.classList.add("hidden");
+        }
+      });
+
+      const sortedGroups = getSortedGroupsList();
+      ensureValidSelectedAttendanceGroup(sortedGroups);
+
+      // 1. Render Attendance Tab (Phase 3)
+      renderAttendanceSectionOnly(sortedGroups);
+
+      // 2. Render Admin Tab sections
+      renderGroupsSection(sortedGroups);
+      renderGroupDropdowns(sortedGroups);
+      renderStudentsListOnly();
+    }
+
+    /**
+     * 3-Faza Davomat oynasini chizish (tanlangan guruh va sana o'zgarmaydi)
+     */
+    function renderAttendanceSectionOnly(passedGroups) {
+      const sortedGroups = passedGroups || getSortedGroupsList();
+      ensureValidSelectedAttendanceGroup(sortedGroups);
+
+      const noGroupsCard = document.getElementById("attendanceNoGroupsCard");
+      const mainWorkspace = document.getElementById("attendanceMainWorkspace");
+
+      if (sortedGroups.length === 0) {
+        if (noGroupsCard) noGroupsCard.classList.remove("hidden");
+        if (mainWorkspace) mainWorkspace.classList.add("hidden");
+        return;
+      } else {
+        if (noGroupsCard) noGroupsCard.classList.add("hidden");
+        if (mainWorkspace) mainWorkspace.classList.remove("hidden");
+      }
+
+      // 1. Guruh selectni yangilash (tanlovni yo'qotmasdan)
+      const groupSelect = document.getElementById("attendanceGroupSelect");
+      if (groupSelect) {
+        groupSelect.innerHTML = sortedGroups.map((g) => {
+          const count = getActiveStudentsInGroup(g.id).length;
+          return `<option value="${escapeHtml(g.id)}" ${g.id === selectedAttendanceGroupId ? "selected" : ""}>${escapeHtml(g.number)} — ${escapeHtml(g.name)} (${count} nafar)</option>`;
+        }).join("");
+        groupSelect.value = selectedAttendanceGroupId;
+      }
+
+      // 2. Sanani ko'rsatish
+      const dateInput = document.getElementById("attendanceDateInput");
+      const dateLabel = document.getElementById("attendanceFormattedDateLabel");
+      if (dateInput && dateInput.value !== selectedAttendanceDate) {
+        dateInput.value = selectedAttendanceDate;
+      }
+      if (dateLabel) {
+        const isToday = selectedAttendanceDate === todayTashkent();
+        dateLabel.textContent = `${formatUzDate(selectedAttendanceDate)}${isToday ? " (Bugun)" : ""}`;
+      }
+
+      // 3. Tanlangan guruhdagi o'quvchilar va ularning bugungi davomati
+      const groupStudents = getActiveStudentsInGroup(selectedAttendanceGroupId);
+      const dayRecords = (attendanceData && attendanceData[selectedAttendanceDate]) || {};
+
+      let presentStudentsCount = 0;
+      let absentStudentsCount = 0;
+
+      groupStudents.forEach((st) => {
+        const rec = dayRecords[st.id] || {};
+        const statuses = [rec.lesson1, rec.lesson2, rec.lesson3];
+        const hasAbsent = statuses.includes("absent");
+        const hasPresent = statuses.includes("present");
+
+        if (hasAbsent) {
+          absentStudentsCount++;
+        } else if (hasPresent) {
+          presentStudentsCount++;
+        }
+      });
+
+      const elTotal = document.getElementById("attStatTotalStudents");
+      const elPresent = document.getElementById("attStatPresentCount");
+      const elAbsent = document.getElementById("attStatAbsentCount");
+
+      if (elTotal) elTotal.textContent = String(groupStudents.length);
+      if (elPresent) elPresent.textContent = String(presentStudentsCount);
+      if (elAbsent) elAbsent.textContent = String(absentStudentsCount);
+
+      // 4. O'quvchilar qatorlarini chizish
+      const rowsContainer = document.getElementById("attendanceStudentRowsContainer");
+      if (!rowsContainer) return;
+
+      if (groupStudents.length === 0) {
+        rowsContainer.innerHTML = `
+          <div class="p-6 text-center text-xs text-slate-500">
+            Bu guruhda o'quvchilar yo'q. Boshqaruv bo'limidan o'quvchi qo'shing.
+          </div>
+        `;
+        return;
+      }
+
+      rowsContainer.innerHTML = groupStudents.map((st, idx) => {
+        const rec = dayRecords[st.id] || {};
+        const s1 = rec.lesson1 || null;
+        const s2 = rec.lesson2 || null;
+        const s3 = rec.lesson3 || null;
+
+        const hasAnyMark = Boolean(s1 || s2 || s3);
+
+        return `
+          <div class="px-3.5 py-2.5 flex items-center justify-between gap-2 hover:bg-slate-50/80 transition">
+            <div class="min-w-0 flex-1 pr-1">
+              <p class="text-xs font-bold text-slate-800 truncate">
+                <span class="text-slate-400 font-normal mr-1">${idx + 1}.</span>${escapeHtml(st.fullName)}
+              </p>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              ${renderLessonButtonHtml(st.id, 1, s1)}
+              ${renderLessonButtonHtml(st.id, 2, s2)}
+              ${renderLessonButtonHtml(st.id, 3, s3)}
+              <button
+                onclick="handleResetStudentRow('${escapeHtml(st.id)}')"
+                class="w-8 h-9 rounded-xl border border-slate-200 flex items-center justify-center text-xs ${hasAnyMark ? "bg-slate-100 text-slate-700 hover:bg-slate-200 active:scale-90" : "bg-slate-50 text-slate-300 opacity-60"} transition"
+                title="Tozalash"
+              >🗑</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderLessonButtonHtml(studentId, lessonNum, status) {
+      let btnClass = "bg-slate-100 text-slate-600 border border-slate-200";
+      let icon = "⚪";
+
+      if (status === "absent") {
+        btnClass = "bg-rose-500 text-white border border-rose-600 shadow-2xs";
+        icon = "❌";
+      } else if (status === "present") {
+        btnClass = "bg-emerald-500 text-white border border-emerald-600 shadow-2xs";
+        icon = "✅";
+      }
+
+      return `
+        <button
+          onclick="handleToggleStudentLesson('${escapeHtml(studentId)}', ${lessonNum})"
+          class="px-2.5 h-9 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1 active:scale-90 transition ${btnClass}"
+        >
+          <span>${lessonNum}:</span>
+          <span>${icon}</span>
+        </button>
+      `;
+    }
+
+    function renderGroupsSection(sortedGroups) {
+      const badge = document.getElementById("groupsListCountBadge");
+      const container = document.getElementById("groupsListContainer");
+      if (!container) return;
+
+      if (badge) badge.textContent = `${sortedGroups.length} ta`;
+
+      if (sortedGroups.length === 0) {
+        container.innerHTML = `<p class="py-6 text-center text-slate-400">Hozircha guruhlar yo'q.</p>`;
+        return;
+      }
+
+      container.innerHTML = sortedGroups.map((g) => {
+        const count = Object.values(studentsData || {}).filter((s) => s && s.groupId === g.id && !s.archived).length;
+        return `
+          <div class="py-2.5 flex items-center justify-between gap-2">
+            <div>
+              <span class="font-bold text-slate-800">${escapeHtml(g.number)}</span>
+              <span class="text-slate-600"> — ${escapeHtml(g.name)}</span>
+              <span class="ml-1.5 text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${count} o'quvchi</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button onclick="openEditGroupModal('${escapeHtml(g.id)}')" class="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium">✏️</button>
+              <button onclick="handleDeleteGroup('${escapeHtml(g.id)}')" class="px-2.5 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600 font-medium">🗑</button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    function renderGroupDropdowns(sortedGroups) {
+      const manualSelect = document.getElementById("newStudentGroupSelect");
+      const filterSelect = document.getElementById("adminStudentGroupFilter");
+
+      if (manualSelect) {
+        const prev = manualSelect.value;
+        manualSelect.innerHTML = `<option value="">— Guruhni tanlang —</option>` +
+          sortedGroups.map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.number)} — ${escapeHtml(g.name)}</option>`).join("");
+        if (prev && groupsData[prev]) manualSelect.value = prev;
+      }
+
+      if (filterSelect) {
+        const prevF = adminGroupFilter;
+        filterSelect.innerHTML = `<option value="ALL">Barcha guruhlar</option>` +
+          sortedGroups.map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.number)} — ${escapeHtml(g.name)}</option>`).join("");
+        filterSelect.value = prevF;
+      }
+    }
+
+    function renderStudentsListOnly() {
+      const container = document.getElementById("studentsListContainer");
+      const badge = document.getElementById("studentsListCountBadge");
+      if (!container) return;
+
+      const list = Object.entries(studentsData || {})
+        .map(([id, s]) => ({ id, ...s }))
+        .filter((s) => {
+          if (!showArchivedStudents && s.archived) return false;
+          if (adminGroupFilter !== "ALL" && s.groupId !== adminGroupFilter) return false;
+          if (studentSearchQuery) {
+            const hay = `${s.fullName || ""} ${s.groupNumber || ""} ${s.groupName || ""}`.toLowerCase();
+            if (!hay.includes(studentSearchQuery)) return false;
+          }
+          return true;
+        })
+        .sort((a, b) => String(a.fullName || "").localeCompare(String(b.fullName || "")));
+
+      if (badge) badge.textContent = `${list.length} ta`;
+
+      if (list.length === 0) {
+        container.innerHTML = `<p class="py-6 text-center text-slate-400">O'quvchilar topilmadi.</p>`;
+        return;
+      }
+
+      container.innerHTML = list.map((s, idx) => `
+        <div class="py-2.5 flex items-center justify-between gap-2 ${s.archived ? "opacity-50 bg-slate-50 px-2 rounded-lg" : ""}">
+          <div>
+            <p class="font-semibold text-slate-800">${idx + 1}. ${escapeHtml(s.fullName)}</p>
+            <p class="text-[11px] text-slate-500">${escapeHtml(s.groupNumber)} — ${escapeHtml(s.groupName)} ${s.archived ? "(Arxivda)" : ""}</p>
+          </div>
+          <div class="flex items-center gap-1 shrink-0">
+            <button onclick="openEditStudentModal('${escapeHtml(s.id)}')" class="px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700">✏️</button>
+            <button onclick="toggleArchiveStudent('${escapeHtml(s.id)}')" class="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700">${s.archived ? "♻️" : "📦"}</button>
+            <button onclick="handleDeleteStudent('${escapeHtml(s.id)}')" class="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-600">🗑</button>
+          </div>
+        </div>
+      `).join("");
+    }
+
+    /*************************************************************************
+     * 10. NAVIGATSIYA VA YORDAMCHI TUGMALAR
+     *************************************************************************/
+    function switchTab(tabName) {
+      activeTab = tabName;
+      if (tg && tg.BackButton) {
+        if (activeTab === "attendance") tg.BackButton.hide();
+        else tg.BackButton.show();
+      }
+      render();
+    }
+
+    function switchAdminSubTab(subName) {
+      activeAdminSubTab = subName;
+      render();
+    }
+
+    function copyMyTelegramId() {
+      const idText = String(currentUser.id);
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(idText).then(() => showToast(`✅ ID nusxalandi: ${idText}`));
+      }
+    }
+
+    function openDevIdModal() {
+      const newId = prompt(`Hozirgi ID: ${currentUser.id}\nTest uchun boshqa ID kiriting:`, String(currentUser.id));
+      if (newId && !isNaN(Number(newId))) {
+        localStorage.setItem("texnikum_test_user_id", String(Number(newId)));
+        currentUser.id = Number(newId);
+        render();
+      }
+    }
+
+    window.addEventListener("DOMContentLoaded", () => {
+      initTelegramWebApp();
+      initFirebaseAndListeners();
+      render();
+    });
+  </script>
+</body>
+</html>
